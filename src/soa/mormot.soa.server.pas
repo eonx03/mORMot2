@@ -1189,10 +1189,16 @@ begin
     ickFromInjectedResolver:
       begin
         dummyObj := nil;
-        if not TServiceContainerServer(fResolver).TryResolve(
-            fInterface.InterfaceTypeInfo, dummyObj) then
-          EInterfaceFactory.RaiseUtf8(
-           'ickFromInjectedResolver: TryResolve(%) failed', [fInterface.InterfaceName]);
+        if fResolver.InheritsFrom(TServiceContainerServer) then
+          if not (fResolver as TServiceContainerServer).TryResolve(
+              fInterface.InterfaceTypeInfo, dummyObj) then
+            EInterfaceFactory.RaiseUtf8(
+             'ickFromInjectedResolver: TryResolve(%) failed', [fInterface.InterfaceName])
+          else
+        else
+          if not (fRestServer.ServiceContainer as TServiceContainerServer).TryResolveInternal(fInterface.InterfaceTypeInfo,dummyObj) then
+            EInterfaceFactory.RaiseUtf8(
+             'ickFromInjectedResolver: TryResolve(%) failed', [fInterface.InterfaceName]);
         result := TInterfacedObject(ObjectFromInterface(IInterface(dummyObj)));
         // RefCount=1 after TryResolve() -> adjust
         dec(TInjectableObjectRest(result).fRefCount);
