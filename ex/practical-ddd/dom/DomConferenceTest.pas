@@ -6,9 +6,8 @@ interface
 uses
   SysUtils,
   Classes,
-  SynCommons,
-  SynTests,
-  mORMot,
+  mormot.core.base,
+  mormot.core.test,
   DomConferenceTypes,
   DomConferenceInterfaces,
   DomConferenceServices,
@@ -24,6 +23,9 @@ type
 
 
 implementation
+
+uses
+  mormot.core.interfaces;
 
 { TTestConference }
 

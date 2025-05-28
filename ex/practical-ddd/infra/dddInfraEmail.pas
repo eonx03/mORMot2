@@ -47,18 +47,25 @@ unit dddInfraEmail;
 
 }
 
-{$I Synopse.inc} // define HASINLINE CPU32 CPU64 OWNNORMTOUPPER
+{$I mormot.defines.inc}
 
 interface
 
 uses
   SysUtils,
-  SynCommons,
-  SynTests,
-  SynCrypto,
-  SynTable, // for TSynFilter and TSynValidate
-  mORMot,
-  mORMotDDD,
+  mormot.core.base,
+  mormot.core.os,
+  mormot.core.log,
+  mormot.core.test,
+  mormot.core.json,
+  mormot.core.search,
+  mormot.rest.core,
+  mormot.rest.server,
+  mormot.orm.core,
+  mormot.orm.base,
+  mormot.crypt.core,
+//  SynTable, // for TSynFilter and TSynValidate
+  mORMotDDD2,
   dddDomUserTypes,
   dddDomUserInterfaces;
 
@@ -193,6 +200,18 @@ type
     property ValidationServerRoot: RawUTF8 read fValidationServerRoot;
   end;
 
+  /// a base record, which will have creation and modification timestamp fields
+  TSQLRecordTimed = class(TSQLRecord)
+  protected
+    fCreated: TCreateTime;
+    fModified: TModTime;
+  published
+    /// will be filled by the ORM when this item will be created in the database
+    property Created: TCreateTime read fCreated write fCreated;
+    /// will be filled by the ORM each time this item will be written in the database
+    property Modified: TModTime read fModified write fModified;
+  end;
+
   /// ORM class storing an email in addition to creation/modification timestamps
   // - declared as its own class, since may be reused
   TSQLRecordEmailAbstract = class(TSQLRecordTimed)
@@ -227,6 +246,12 @@ type
 
 implementation
 
+uses
+  mormot.core.text,
+  mormot.core.buffers,
+  mormot.core.unicode,
+  mormot.core.datetime,
+  mormot.core.variants;
 
 { TDDDEmailServiceAbstract }
 
@@ -247,7 +272,7 @@ function TDDDEmailServiceAbstract.CheckEmailCorrect(
 var msg: string;
 begin
   if (aEmail<>nil) and fEmailValidate.Process(0,aEmail.Email,msg) and
-     aEmail.FilterAndValidate(Rest,msg) then
+     aEmail.FilterAndValidate(Rest.Orm,msg) then
     result := true else  begin
     CqrsSetResultString(cqrsDDDValidationFailed,msg,aResult);
     result := false;
@@ -370,7 +395,7 @@ end;
 
 function TDDDEmailValidationService.GetEmailValidation(const aLogonName: RawUTF8): TSQLRecordEmailValidation;
 begin
-  result := RestClass.Create(Rest,'Logon=?',[aLogonName]);
+  result := RestClass.Create(Rest.Orm,'Logon=?',[aLogonName]);
   if result.fID=0 then
     FreeAndNil(result);
 end;
@@ -416,7 +441,8 @@ begin
     EmailValidation.RequestTime := TimeLogNowUTC;
     EmailValidation.ValidationSalt := fValidationSalt;
     context := EmailValidation.GetSimpleFieldsAsDocVariant(true);
-    _ObjAddProps(aTemplate,context);
+    // TODO: This line still needs to be converted from version 1.18
+    //    _ObjAddProps(aTemplate,context);
     _ObjAddProps(['ValidationUri',
       ComputeURIForReply(EmailValidation.Logon,EmailValidation.Email)],context);
     msg := Template.ComputeMessage(context,aTemplate.FileName);

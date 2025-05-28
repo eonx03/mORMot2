@@ -6,13 +6,13 @@ interface
 uses
   SysUtils,
   Classes,
-  SynCommons,
-  mORMot,
-  SynSQLite3,
-  SynTable,
-  mORMotSQLite3,
-  mORMotDB,
-  dddInfraApps,
+  mormot.core.base,
+  mormot.core.json,
+  mormot.crypt.secure,
+  mormot.orm.core,
+  mormot.orm.sql,
+  mormot.rest.core,
+  mormot.rest.server,
   DomConferenceTypes,
   DomConferenceInterfaces,
   DomConferenceServices,
@@ -44,13 +44,19 @@ type
 
 implementation
 
+uses
+  mormot.core.os,
+  mormot.db.raw.sqlite3,
+  mormot.rest.sqlite3;
+
+
 { TBookProcessSettings }
 
 constructor TBookProcessSettings.Create;
 begin
   inherited;
   // use a local SQlite3 database file by default
-  fStore.Kind := 'TSQLRestServerDB'; // change Kind to switch to another engine
+  fStore.Kind := 'TRestServerDB'; // change Kind to switch to another engine
   fStore.ServerName := ChangeFileExt(ExeVersion.ProgramFileName, '.db');
 end;
 
@@ -61,7 +67,7 @@ constructor TBookProcess.Create(aSettings: TBookProcessSettings);
 begin
   inherited Create;
   fSettings := aSettings;
-  fRest := TSQLRestExternalDBCreate(
+  fRest := TRestExternalDBCreate(
     TSQLModel.Create([TSQLBooking], 'book'), fSettings.Store, false, []);
   fRest.Model.Owner := fRest;
   if fRest is TSQLRestServerDB then

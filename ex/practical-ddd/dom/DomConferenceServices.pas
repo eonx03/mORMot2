@@ -6,8 +6,7 @@ interface
 uses
   SysUtils,
   Classes,
-  SynCommons,
-  mORMot,
+  mormot.core.base,
   DomConferenceTypes,
   DomConferenceInterfaces,
   DomConferenceDepend;

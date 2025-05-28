@@ -6,8 +6,9 @@ interface
 uses
   SysUtils,
   Classes,
-  SynCommons,
-  mORMot,
+  mormot.core.base,
+  mormot.orm.core,
+  mormot.rest.core,
   DomConferenceTypes,
   DomConferenceDepend;
 
@@ -44,7 +45,11 @@ type
   
 implementation
 
-uses Variants;
+uses Variants,
+  mormot.core.data,
+  mormot.core.json,
+  mormot.core.text,
+  mormot.core.variants;
 
 { TORMBookingRepository }
 
@@ -58,7 +63,7 @@ end;
 function TORMBookingRepository.GetBooking(const Name: TAttendeeName;
   const FirstName: TAttendeeFirstName): TSQLBooking;
 begin
-  result := TSQLBooking.Create(fRest, 'Name like ? and FirstName like ?',
+  result := TSQLBooking.Create(fRest.Orm, 'Name like ? and FirstName like ?',
      [Name, FirstName]);
 end;
 
@@ -67,6 +72,7 @@ function TORMBookingRepository.RetrieveRegistration(
   out Days: TSessionDays; out Attendee: TAttendee): boolean;
 var
   rec: TSQLBooking;
+  tmp: RawUtf8;
 begin
   result := false;
   rec := GetBooking(Name, FirstName);
@@ -76,7 +82,8 @@ begin
     Attendee.Name := rec.Name;
     Attendee.FirstName := rec.FirstName;
     Attendee.RegistrationNumber := rec.IDValue;
-    DynArray(TypeInfo(TSessionDays), Days).LoadFromVariant(rec.Sessions);
+    tmp := VariantToUtf8(rec.Sessions);
+    DynArrayLoadJson(Days, pointer(tmp), TypeInfo(TSessionDays));
     result := true;
   finally
     rec.Free;

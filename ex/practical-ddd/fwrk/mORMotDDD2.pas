@@ -1,7 +1,7 @@
 /// Domain-Driven-Design toolbox for mORMot
 // - this unit is a part of the freeware Synopse mORMot framework,
 // licensed under a MPL/GPL/LGPL tri-license; version 1.18
-unit mORMotDDD;
+unit mORMotDDD2;
 
 {
     This file is part of Synopse mORMot framework.
@@ -47,7 +47,7 @@ unit mORMotDDD;
 
 }
 
-{$I Synopse.inc} // define HASINLINE CPU32 CPU64 OWNNORMTOUPPER
+{$I mormot.defines.inc}
 
 interface
 
@@ -63,13 +63,28 @@ uses
   Classes,
   Contnrs,
   Variants,
-  SyncObjs,
-  SynCrtSock,
-  SynCommons,
-  SynLog,
-  SynCrypto,
-  SynTable, // for TSynFilter and TSynValidate
-  mORMot;
+  mormot.core.base,
+  mormot.core.text,
+  mormot.core.interfaces,
+  mormot.core.log,
+  mormot.core.os,
+  mormot.soa.core,
+  mormot.core.threads,
+  mormot.rest.core,
+  mormot.orm.core,
+  mormot.core.rtti,
+  mormot.core.search,
+  mormot.orm.base,
+  mormot.db.core,
+  mormot.core.perf,
+  mormot.core.data,
+  mormot.rest.server,
+  mormot.core.json,
+  mormot.core.variants,
+  mormot.core.datetime,
+  mormot.core.unicode,
+  mormot.orm.rest,
+  mormot.rest.memserver;
 
 { some mORMot conventions about DDD implementation:
 
@@ -466,23 +481,25 @@ type
   // - the Entity class may be defined as any TPersistent or TSynPersistent, with
   // an obvious preference for TSynPersistent and TSynAutoCreateFields classes
   TDDDRepositoryRestFactory = class(TInterfaceResolverForSingleInterface)
+  private
+    function MyGetAggregateClass: TClass;
   protected
     fOwner: TDDDRepositoryRestManager;
     fInterface: TInterfaceFactory;
     fRest: TSQLRest;
     fTable: TSQLRecordClass;
-    fAggregate: TClassInstance;
-    fAggregateRTTI: TSQLPropInfoList;
+    fAggregate: TRttiCustom;
+    fAggregateRTTI: TOrmPropInfoList;
     // stored in fGarbageCollector, following fAggregateProp[]
     fGarbageCollector: TObjectDynArray;
     fFilter: array of array of TSynFilter;
     fValidate: array of array of TSynValidate;
     // TSQLPropInfoList correspondance, as filled by ComputeMapping:
     fAggregateToTable: TSQLPropInfoObjArray;
-    fAggregateProp: TSQLPropInfoRTTIObjArray;
-    fAggregateID: TSQLPropInfoRTTI;
+    fAggregateProp: TOrmPropInfoRttiObjArray;
+    fAggregateID: TOrmPropInfoRTTI;
     // store custom field mapping between TSQLRecord and Aggregate
-    fPropsMapping: TSQLRecordPropertiesMapping;
+    fPropsMapping: TOrmMapping;
     fPropsMappingVersion: cardinal;
     procedure ComputeMapping;
     function GetAggregateName: string;
@@ -596,13 +613,13 @@ type
     property Owner: TDDDRepositoryRestManager read fOwner;
     /// the DDD's Entity class handled by this factory
     // - may be any TPersistent, but very likely a TSynAutoCreateFields class
-    property Aggregate: TClass read fAggregate.ItemClass;
+    property Aggregate: TClass read MyGetAggregateClass;
     /// the ORM's TSQLRecord used for actual storage
     property Table: TSQLRecordClass read fTable;
     /// the mapped DDD's Entity class published properties RTTI
-    property Props: TSQLPropInfoList read fAggregateRTTI;
+    property Props: TOrmPropInfoList read fAggregateRTTI;
     /// access to the Aggregate / ORM field mapping
-    property FieldMapping: TSQLRecordPropertiesMapping read fPropsMapping;
+    property FieldMapping: TOrmMapping read fPropsMapping;
   published
     /// the associated I*Query / I*Command repository interface
     property Repository: TInterfaceFactory read fInterface;
@@ -673,7 +690,7 @@ type
   protected
     fBatch: TSQLRestBatch;
     fBatchAutomaticTransactionPerRow: cardinal;
-    fBatchOptions: TSQLRestBatchOptions;
+    fBatchOptions: TRestBatchOptions;
     fBatchResults: TIDDynArray;
     procedure ORMEnsureBatchExists; virtual;
     // this default implementation will check the status vs command,
@@ -1042,7 +1059,27 @@ type
 
 { *********** Application Layer Implementation }
 
+  /// used to set the published properties of a TInjectableAutoCreateFields
+  // - TInjectableAutoCreateFields.Create will check any resolver able to
+  // implement this interface, then run its SetProperties() method on it
+  IAutoCreateFieldsResolve = interface
+    ['{396362E9-B60D-43D4-A0D4-802E4479F24E}']
+    /// this method will be called once on any TInjectableAutoCreateFields just
+    // created instance
+    procedure SetProperties(Instance: TObject);
+  end;
+
 type
+  TInjectableAutoCreateFields = class(TInjectableObject)
+  public
+    /// this overriden constructor will instantiate all its nested
+    // TPersistent/TSynPersistent/TSynAutoCreateFields class published properties
+    // - then resolve and call IAutoCreateFieldsResolve.SetProperties(self)
+    constructor Create; override;
+    /// finalize the instance, and release its published properties
+    destructor Destroy; override;
+  end;
+
   /// abstract class for implementing an Application Layer service
   // - is defined as an TInjectableAutoCreateFields, so that any published
   // properties defined as interfaces would be resolved at creation, and
@@ -1053,6 +1090,26 @@ type
   public
   end;
 
+/// statistics about a TDDDEmailerDaemon instance
+// - in addition to a standard TSynMonitor, will maintain the connection count
+TDDDExtendedDaemonStats = class(TSynMonitorWithSize)
+protected
+  fConnection: cardinal;
+public
+  /// will increase the connection count
+  procedure NewConnection;
+published
+  /// the connection count
+  property Connection: cardinal read fConnection;
+end;
+
+/// allow to fix TEvent.WaitFor() method for Kylix
+// - under Windows or with FPC, will call original TEvent.WaitFor() method
+function FixedWaitFor(Event: TEvent; Timeout: LongWord): TWaitResult;
+
+/// allow to fix TEvent.WaitFor(Event,INFINITE) method for Kylix
+// - under Windows or with FPC, will call original TEvent.WaitFor() method
+procedure FixedWaitForever(Event: TEvent);
 
 
 implementation
@@ -1062,7 +1119,7 @@ implementation
 var
   TCQRSResultText: array[TCQRSResult] of PShortString;
 
-function ToText(res: TCQRSResult): PShortString;
+function ToText(res: TCQRSResult): PShortString; overload;
 begin
   result := TCQRSResultText[res];
 end;
@@ -1135,7 +1192,7 @@ end;
 procedure TCQRSService.CqrsSetResult(E: Exception; var Result: TCQRSResult);
 begin
   InternalCqrsSetResult(cqrsInternalError,Result);
-  _ObjAddProps(['Exception',ObjectToVariantDebug(E)],fLastErrorContext);
+  _ObjAddProps(['Exception',ObjectToVariantDebug(E, '%.ExecuteCommand', [self])],fLastErrorContext);
   AfterInternalCqrsSetResult;
 end;
 
@@ -1277,30 +1334,42 @@ end;
 constructor TDDDRepositoryRestFactory.Create(
   const aInterface: TGUID; aImplementation: TDDDRepositoryRestClass;
   aAggregate: TClass; aRest: TSQLRest; aTable: TSQLRecordClass;
-  const TableAggregatePairs: array of RawUTF8; aOwner: TDDDRepositoryRestManager);
+  const TableAggregatePairs: array of RawUtf8; aOwner: TDDDRepositoryRestManager);
 begin
   fInterface := TInterfaceFactory.Get(aInterface);
-  if fInterface=nil then
-    raise EDDDRepository.CreateUTF8(self,
-     '%.Create(%): Interface not registered - you could use TInterfaceFactory.'+
-     'RegisterInterfaces()',[self,GUIDToShort(aInterface)]);
-  inherited Create(fInterface.InterfaceTypeInfo,aImplementation);
+  if fInterface = nil then
+    raise EDDDRepository.CreateUtf8(self, '%: Interface % not registered - use TInterfaceFactory.RegisterInterfaces',
+      [self, GUIDToShort(aInterface)]);
+
+  inherited Create(fInterface.InterfaceTypeInfo, aImplementation);
+
+  if (aAggregate = nil) or (aRest = nil) or (aTable = nil) then
+    raise EDDDRepository.CreateUtf8(self, '%: Invalid nil parameters', [self]);
+
   fOwner := aOwner;
   fRest := aRest;
   fTable := aTable;
-  if (aAggregate=nil) or (fRest=nil) or (fTable=nil) then
-    raise EDDDRepository.CreateUTF8(self,'Invalid %.Create(nil)',[self]);
-  fAggregate.Init(aAggregate);
-  fPropsMapping.Init(aTable,RawUTF8(aAggregate.ClassName),aRest,false,[]);
+
+  // Replace fAggregate.Init(...) with Rtti.RegisterClass
+  fAggregate := Rtti.RegisterClass(aAggregate); // TRttiCustom
+
+//  fPropsMapping.Init(aTable, RawUtf8(fAggregate.Name), aRest, false, []);
+//  fPropsMapping.MapFields(['ID', '####']); // No RowID
+//  fPropsMapping.MapFields(TableAggregatePairs);
+  fPropsMapping.Init(aTable, RawUtf8(fAggregate.Name), aRest, false, []);
   fPropsMapping.MapFields(['ID','####']); // no ID/RowID for our aggregates
   fPropsMapping.MapFields(TableAggregatePairs);
-  fAggregateRTTI := TSQLPropInfoList.Create(aAggregate, GetAggregateRTTIOptions);
-  SetLength(fAggregateToTable,fAggregateRTTI.Count);
-  SetLength(fAggregateProp,fAggregateRTTI.Count);
+
+  // Replace TSQLPropInfoList with TRttiProps
+  fAggregateRTTI := TOrmPropInfoList.Create(aAggregate, GetAggregateRTTIOptions);
+  SetLength(fAggregateToTable, fAggregateRTTI.Count);
+  SetLength(fAggregateProp, fAggregateRTTI.Count);
   ComputeMapping;
+
   {$ifdef WITHLOG}
-  Rest.LogClass.Add.Log(sllDDDInfo,'Started % implementing % for % over %',
-    [self,fInterface.InterfaceName,aAggregate,fTable],self);
+  Rest.LogClass.Add.Log(sllDDDInfo,
+    'Started % implementing % for % over %',
+    [self, fInterface.InterfaceName, fAggregate.InstanceClass, fTable], self);
   {$endif}
 end;
 
@@ -1363,7 +1432,7 @@ const RAW_TYPE: array[TSQLFieldType] of RawUTF8 = (
 var hier: TClassDynArray;
     a,i,f: integer;
     code,aggname,recname,parentrecname,typ: RawUTF8;
-    map: TSQLPropInfoList;
+    map: TOrmPropInfoList;
     rectypes: TRawUTF8DynArray;
 begin
   {$ifdef KYLIX3} hier := nil; {$endif to make compiler happy}
@@ -1376,7 +1445,7 @@ begin
     for i := 0 to high(hier) do begin
       aggname := RawUTF8(hier[i].ClassName);
       recname := 'TSQLRecord'+copy(aggname,2,100);
-      map := TSQLPropInfoList.Create(hier[i],
+      map := TOrmPropInfoList.Create(hier[i],
         [pilSingleHierarchyLevel,pilAllowIDFields,
          pilSubClassesFlattening,pilIgnoreIfGetter]);
       try
@@ -1387,13 +1456,13 @@ begin
         SetLength(rectypes,map.count);
         for f := 0 to map.Count-1 do
         with map.List[f] do begin
-          rectypes[f] := RAW_TYPE[SQLFieldType];
+          rectypes[f] := RAW_TYPE[OrmFieldType];
           if rectypes[f]='' then
-            if SQLFieldType=sftInteger then begin
+            if OrmFieldType=sftInteger then begin
               rectypes[f] := 'Int64';
               if InheritsFrom(TSQLPropInfo) then
-                with TSQLPropInfoRTTI(map.List[f]).PropType^ do
-                  if (Kind=tkInteger) and (OrdType<>otULong) then
+                with TOrmPropInfoRTTI(map.List[f]).PropType^ do
+                  if (Kind=rkInteger) and (RttiOrd<>roULong) then
                     rectypes[f] := 'integer'; // cardinal -> Int64
             end else
               rectypes[f] := SQLFieldRTTITypeName;
@@ -1436,23 +1505,24 @@ procedure TDDDRepositoryRestFactory.ComputeMapping;
   begin
     if agg.SQLDBFieldType=rec.SQLDBFieldType then
       exit; // very same type at DB level -> OK
-    if (agg.SQLFieldType=sftBlobDynArray) and
-       (rec.SQLFieldType in [sftVariant,sftUTF8Text]) then
+    if (agg.OrmFieldType=sftBlobDynArray) and
+       (rec.OrmFieldType in [sftVariant,sftUTF8Text]) then
       exit; // allow array <-> JSON/TEXT <-> variant/RawUTF8 marshalling
     raise EDDDRepository.CreateUTF8(self,
       '% types do not match at DB level: %.%:%=% and %.%:%=%',[self,
-      Aggregate,agg.Name,agg.SQLFieldRTTITypeName,agg.SQLDBFieldTypeName^,
+// TODO: This line still needs to be converted from version 1.18
+//      Aggregate,agg.Name,agg.SQLFieldRTTITypeName,agg.SQLDBFieldTypeName^,
       fTable,rec.Name,rec.SQLFieldRTTITypeName,rec.SQLDBFieldTypeName^]);
   end;
 
 var i,ndx: integer;
     ORMProps: TSQLPropInfoObjArray;
-    agg: TSQLPropInfoRTTI;
+    agg: TOrmPropInfoRTTI;
 begin
   fAggregateID := nil;
   ORMProps := fTable.RecordProps.Fields.List;
   for i := 0 to fAggregateRTTI.Count-1 do begin
-    agg := fAggregateRTTI.List[i] as TSQLPropInfoRTTI;
+    agg := fAggregateRTTI.List[i] as TOrmPropInfoRTTI;
     fAggregateProp[i] := agg;
     ndx := fPropsMapping.ExternalToInternalIndex(agg.Name);
     if ndx=-1 then // ID/RowID mapped with an existing String/Hexa field
@@ -1507,11 +1577,11 @@ procedure TDDDRepositoryRestFactory.TablePropToAggregate(
     case fAggregateID.SQLDBFieldType of
     ftInt64: begin
       Int64ToUtf8(aRecord.IDValue,v);
-      fAggregateID.SetValue(aAggregate,pointer(v),false);
+      fAggregateID.SetValue(aAggregate,pointer(v),Length(v),false);
     end;
     ftUTF8: begin
       Int64ToHex(aRecord.IDValue,v);
-      fAggregateID.SetValue(aAggregate,pointer(v),true);
+      fAggregateID.SetValue(aAggregate,pointer(v),Length(v),true);
     end;
     end;
   end;
@@ -1520,13 +1590,13 @@ begin
   if fAggregateID=aAggregateProp then
     ProcessID else
     if aRecordProp=nil then
-      aAggregateProp.SetValue(aAggregate,nil,false) else
+      aAggregateProp.SetValue(aAggregate,nil,0,false) else
       aRecordProp.CopyProp(aRecord,aAggregateProp,aAggregate);
 end;
 
 function TDDDRepositoryRestFactory.CreateInstance: TInterfacedObject;
 begin
-  result := TDDDRepositoryRestClass(fImplementation.ItemClass).Create(self);
+  result := TDDDRepositoryRestClass(fImplementation.ValueClass).Create(self);
 end;
 
 procedure TDDDRepositoryRestFactory.AggregateClear(aAggregate: TObject);
@@ -1535,12 +1605,12 @@ begin
   if aAggregate<>nil then
     for i := 0 to high(fAggregateProp) do
       with fAggregateProp[i] do
-        SetValue(Flattened(aAggregate),nil,false);
+        SetValue(Flattened(aAggregate),nil,0,false);
 end;
 
 function TDDDRepositoryRestFactory.AggregateCreate: TObject;
 begin
-  result := fAggregate.CreateNew;
+  result := fAggregate.ClassNewInstance;
 end;
 
 procedure TDDDRepositoryRestFactory.AggregateToJSON(aAggregate: TObject;
@@ -1629,7 +1699,7 @@ begin
   i := 0;
   if aSource.FillRewind then
     while aSource.FillOne do begin
-      res[i] := fAggregate.CreateNew;
+      res[i] := fAggregate.ClassNewInstance;
       AggregateFromTable(aSource,res[i]);
       inc(i);
     end;
@@ -1651,6 +1721,11 @@ begin
     result := fTable.ClassName;
 end;
 
+function TDDDRepositoryRestFactory.MyGetAggregateClass: TClass;
+begin
+  Result := fAggregate.ValueClass;
+end;
+
 procedure TDDDRepositoryRestFactory.AddFilterOrValidate(
   const aFieldNames: array of RawUTF8; aFilterOrValidate: TSynFilterOrValidate;
   aFieldNameFlattened: boolean);
@@ -1668,12 +1743,12 @@ begin
       SetLength(arr^,fAggregateRTTI.Count);
     if aFieldNames[f]='*' then begin // apply to all text fields
       for ndx := 0 to high(fAggregateProp) do
-        if fAggregateProp[ndx].SQLFieldType in RAWTEXT_FIELDS then
+        if fAggregateProp[ndx].OrmFieldType in RAWTEXT_FIELDS then
           aFilterOrValidate.AddOnce(TSynFilterOrValidateObjArray(arr^[ndx]),false);
     end else begin
       if aFieldNameFlattened then
         ndx := fAggregateRTTI.IndexByNameUnflattenedOrExcept(aFieldNames[f]) else
-        ndx := fAggregateRTTI.IndexByNameOrExcept(aFieldNames[f]);
+          ndx := fAggregateRTTI.IndexByNameOrExcept(aFieldNames[f]);
       aFilterOrValidate.AddOnce(TSynFilterOrValidateObjArray(arr^[ndx]),false);
     end;
   end;
@@ -1845,7 +1920,7 @@ begin
   if ForcedBadRequest then
     CqrsSetResult(cqrsBadRequest,result) else
     CqrsSetResultSuccessIf(fCurrentORMInstance.FillPrepare(
-      Factory.Rest,ORMWhereClauseFmt,[],Bounds),result,cqrsNotFound);
+      Factory.Rest.Orm,ORMWhereClauseFmt,[],Bounds),result,cqrsNotFound);
 end;
 
 function TDDDRepositoryRestQuery.ORMSelectCount(
@@ -1937,6 +2012,7 @@ end;
 
 function TDDDRepositoryRestCommand.DeleteAll: TCQRSResult;
 var i: integer;
+    ID: TID;
 begin
   if CqrsBeginMethod(qaCommandOnSelect,result) then
     if fCurrentORMInstance.FillTable=nil then
@@ -1945,10 +2021,13 @@ begin
         CqrsSetResult(cqrsNoPriorQuery,result) else begin
         ORMEnsureBatchExists;
         for i := 1 to fCurrentORMInstance.FillTable.RowCount do
-          if fBatch.Delete(fCurrentORMInstance.FillTable.IDColumnHiddenValue(i))<0 then begin
+        begin
+          ID := fCurrentORMInstance.FillTable.GetID(i);
+          if fBatch.Delete(ID)<0 then begin
             CqrsSetResult(cqrsDataLayerError,result);
             exit;
           end;
+        end;
         CqrsSetResult(cqrsSuccess,result);
       end;
 end;
@@ -1970,7 +2049,7 @@ end;
 procedure TDDDRepositoryRestCommand.ORMEnsureBatchExists;
 begin
   if fBatch=nil then
-    fBatch := TSQLRestBatch.Create(Factory.Rest,Factory.Table,
+    fBatch := TSQLRestBatch.Create(Factory.Rest.Orm,Factory.Table,
       fBatchAutomaticTransactionPerRow,fBatchOptions);
 end;
 
@@ -2012,7 +2091,7 @@ begin
       Factory.AggregateToTable(aAggregate,fCurrentORMInstance.IDValue,fCurrentORMInstance);
     end;
     msg := fCurrentORMInstance.FilterAndValidate(
-      Factory.Rest,[0..MAX_SQLFIELDS-1],@validator);
+      Factory.Rest.Orm,[0..MAX_SQLFIELDS-1],@validator);
     if msg<>'' then begin
       SetValidationError(cqrsDataLayerError);
       exit;
@@ -2095,8 +2174,8 @@ end;
 constructor TCQRSQueryObjectRest.CreateWithResolver(
   aResolver: TInterfaceResolver; aRaiseEServiceExceptionIfNotFound: boolean);
 begin
-  if (aResolver<>nil) and aResolver.InheritsFrom(TServiceContainer) then
-    fRest := TServiceContainer(aResolver).Rest;
+  if (aResolver<>nil) and aResolver.InheritsFrom(TRestServer) then
+    fRest := aResolver as TSQLRest;
   inherited CreateWithResolver(aResolver,aRaiseEServiceExceptionIfNotFound);
 end;
 
@@ -2219,6 +2298,12 @@ function TDDDMonitoredDaemon.GetStatus: variant;
 var i,working: integer;
     stats: TSynMonitor;
     pool: TDocVariantData;
+    totalCount: TSynMonitorCount64;
+    totalBytes: TSynMonitorTotalBytes;
+    totalTime: TSynMonitorTotalMicroSec;
+    totalConnections: Cardinal;
+    Connection: Cardinal;
+    details: variant;
 begin
   {$ifdef WITHLOG}
   Rest.LogClass.Enter('GetStatus',[],self);
@@ -2228,30 +2313,56 @@ begin
   try
     try
       working := 0;
-      if fMonitoringClass=nil then
-        if fProcessMonitoringClass=nil then
-          stats := TSynMonitorWithSize.Create else
-          stats := fProcessMonitoringClass.Create else
-        stats := fMonitoringClass.Create;
-      try
-        pool.InitArray([],JSON_OPTIONS[true]);
-        for i := 0 to High(fProcess) do
-        with fProcess[i] do begin
+      totalCount := 0;
+      totalBytes := 0;
+      totalTime := 0;
+      totalConnections := 0;
+      pool.InitArray([],JSON_OPTIONS[true]);
+      for i := 0 to High(fProcess) do
+      with fProcess[i] do
+      begin
+        if fMonitoring.Processing then
+          Inc(working);
 
-          if fMonitoring.Processing then
-            inc(working);
-          pool.AddItem(fMonitoring.ComputeDetails);
-          stats.Sum(fMonitoring);
+        // Lock fMonitoring to read details safely
+        fMonitoring.Lock;
+        try
+          totalCount := totalCount + fMonitoring.TaskCount;
+          totalBytes := totalBytes + fMonitoring.Size.Bytes;
+          totalTime := totalTime + fMonitoring.TotalTime.MicroSec;
+          if fMonitoring.InheritsFrom(TDDDExtendedDaemonStats) then
+          begin
+            Connection := TDDDExtendedDaemonStats(fMonitoring).Connection;
+            totalConnections := totalConnections + Connection;
+          end
+          else
+            Connection := 0;
+          details := _Obj([
+            'Count', fMonitoring.TaskCount,
+            'Bytes', fMonitoring.Size.Bytes,
+            'Time', fMonitoring.TotalTime.MicroSec,
+            'Connections', Connection
+          ]);
+        finally
+          fMonitoring.UnLock;
         end;
-        result := ObjectToVariantDebug(self);
-        _ObjAddProps(['working',working, 'stats',stats.ComputeDetails,
-          'threadstats',variant(pool)],result);
-      finally
-        stats.Free;
+        pool.AddItem(details);
       end;
+
+      result := ObjectToVariantDebug(self, '%', [NowToString]);
+      _ObjAddProps([
+        'working', working,
+        'stats', _ObjFast([
+          'TaskCount', totalCount,
+          'Bytes', totalBytes,
+          'Time', totalTime,
+          'Connection', totalConnections
+        ]),
+        'threadstats', variant(pool)
+      ], result);
     except
       on E: Exception do
-        result := ObjectToVariantDebug(E);
+        result := ObjectToVariantDebug(E, '%.ExecuteCommand', [self]);
     end;
   finally
     fProcessLock.Leave;
@@ -2359,9 +2470,11 @@ end;
 constructor TDDDAdministratedDaemon.Create(
   const aUserName, aHashedPassword, aRoot: RawUTF8; const aServerNamedPipe: TFileName);
 var server: TSQLRestServer;
+a: TOrmModel;
 begin
-  server := TSQLRestServerFullMemory.CreateWithOwnedAuthenticatedModel([],
-    aUserName,aHashedPassword,aRoot);
+// TODO: This line still needs to be converted from version 1.18
+//  server := TSQLRestServerFullMemory.CreateWithOwnedAuthenticatedModel([],
+//    aUserName,aHashedPassword,aRoot);
   server.Options := server.Options+[rsoSecureConnectionRequired];
   Create(server);
   if FRefCount=2 then
@@ -2369,7 +2482,8 @@ begin
   fAdministrationServerOwned := true;
   if aServerNamedPipe<>'' then
     {$ifdef MSWINDOWS}
-    fAdministrationServer.ExportServerNamedPipe(aServerNamedPipe);
+// TODO: This line still needs to be converted from version 1.18
+//    fAdministrationServer.ExportServerNamedPipe(aServerNamedPipe);
     {$else}
     {$ifdef WITHLOG}
     fLog.SynLog.Log(sllTrace,'Ignored AuthNamedPipeName=% under Linux',
@@ -2629,8 +2743,9 @@ begin
             exit;
           end else
           if fInternalSettingsFolder<>'' then begin
-            AdministrationExecuteGetFiles(fInternalSettingsFolder,
-              '*.config;*.settings',name,result);
+// TODO: This line still needs to be converted from version 1.18
+//            AdministrationExecuteGetFiles(fInternalSettingsFolder,
+//              '*.config;*.settings',name,result);
             exit;
           end;
         end;
@@ -2660,7 +2775,8 @@ begin
       result.Content := SystemInfoJson;
       {$ifdef MSWINDOWS}
       result.Content[length(result.Content)] := ',';
-      result.Content := result.Content+'"ip":"'+GetIPAddressesText+'"}';
+// TODO: This line still needs to be converted from version 1.18
+//      result.Content := result.Content+'"ip":"'+GetIPAddressesText+'"}';
       {$endif}
       exit;
     end;
@@ -2702,15 +2818,17 @@ begin
     10: begin
       result.Content := JSONEncode(['daemon',DaemonName]);
       if (DatabaseName='') and (fInternalDatabases<>nil) then begin
-        fInternalDatabases[0].AdministrationExecute('',SQL,result);
+// TODO: This line still needs to be converted from version 1.18
+//        fInternalDatabases[0].AdministrationExecute('',SQL,result);
         exit;
       end;
     end;
     end;
   end;
   rest := PublishedORM(DatabaseName);
-  if rest<>nil then
-    rest.AdministrationExecute(DatabaseName,SQL,result);
+// TODO: This line still needs to be converted from version 1.18
+//  if rest<>nil then
+//    rest.AdministrationExecute(DatabaseName,SQL,result);
 end;
 
 function TDDDAdministratedDaemon.DatabaseList: TRawUTF8DynArray;
@@ -2815,7 +2933,46 @@ end;
 
 procedure TDDDAdministratedDaemonMonitor.ProcessException(E: Exception);
 begin
-  Server.ProcessError(ObjectToVariantDebug(E));
+  Server.ProcessError(ObjectToVariantDebug(E, '%.ExecuteCommand', [self]));
+end;
+
+{ TInjectableAutoCreateFields }
+
+constructor TInjectableAutoCreateFields.Create;
+var Inject: IAutoCreateFieldsResolve;
+begin
+  AutoCreateFields(self);
+  inherited Create; // overriden method will inject its dependencies (DI/IoC)
+  if TryResolve(TypeInfo(IAutoCreateFieldsResolve),Inject) then
+    Inject.SetProperties(self);
+end;
+
+destructor TInjectableAutoCreateFields.Destroy;
+begin
+  AutoDestroyFields(self);
+  inherited;
+end;
+
+function FixedWaitFor(Event: TEvent; Timeout: LongWord): TWaitResult;
+begin
+  result := Event.WaitFor(TimeOut);
+end;
+
+procedure FixedWaitForever(Event: TEvent);
+begin
+  FixedWaitFor(Event,INFINITE);
+end;
+
+{ TDDDExtendedDaemonStats }
+
+procedure TDDDExtendedDaemonStats.NewConnection;
+begin
+  fSafe.Lock;
+  try
+    inc(fConnection);
+  finally
+    fSafe.UnLock;
+  end;
 end;
 
 initialization

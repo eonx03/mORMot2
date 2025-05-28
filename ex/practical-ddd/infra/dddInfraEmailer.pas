@@ -47,7 +47,7 @@ unit dddInfraEmailer;
 
 }
 
-{$I Synopse.inc} // define HASINLINE CPU32 CPU64 OWNNORMTOUPPER
+{$I mormot.defines.inc}
 
 interface
 
@@ -61,18 +61,23 @@ uses
   {$endif}
   SysUtils,
   Classes,
-  SynCommons,
-  SynLog,
-  SynTests,
-  SynCrtSock,
-  SynMustache,
-  SynTable,
-  SyncObjs,
-  mORMot,
-  mORMotDDD,
-  dddDomUserTypes,
+  mormot.core.base,
+  mormot.core.log,
+  mormot.core.test,
+  mormot.core.interfaces,
+  mormot.net.sock,
+  mormot.core.perf,
+  mormot.rest.core,
+  mormot.rest.server,
+  mormot.orm.core,
+  mormot.orm.base,
+  mormot.core.mustache,
+  mormot.core.unicode,
+  mormot.core.json,
+  mORMotDDD2,
+  dddInfraEmail,
   dddDomUserInterfaces,
-  dddInfraEmail; // for TDDDEmailServiceAbstract
+  dddDomUserTypes;
 
 
 { ****************** Email Sending Service }
@@ -146,17 +151,7 @@ type
 
   /// statistics about a TDDDEmailerDaemon instance
   // - in addition to a standard TSynMonitor, will maintain the connection count
-  TDDDEmailerDaemonStats = class(TSynMonitorWithSize)
-  protected
-    fConnection: cardinal;
-    procedure LockedSum(another: TSynMonitor); override;
-  public
-    /// will increase the connection count
-    procedure NewConnection;
-  published
-    /// the connection count
-    property Connection: cardinal read fConnection;
-  end;
+  TDDDEmailerDaemonStats = TDDDExtendedDaemonStats;
 
   /// thread processing a SMTP connection
   TDDDEmailerDaemonProcess = class(TDDDMonitoredDaemonProcessRest)
@@ -210,8 +205,8 @@ type
     fState: TSQLRecordEmailerState;
   public
     // will create an index on State+ID
-    class procedure InitializeTable(Server: TSQLRestServer; const FieldName: RawUTF8;
-      Options: TSQLInitializeTableOptions); override;
+    class procedure InitializeTable(const Server: IRestOrmServer;
+      const FieldName: RawUtf8; Options: TOrmInitializeTableOptions); override;
   published
     property Sender: RawUTF8 read fSender write fSender;
     property Recipients: TRawUTF8DynArray read fRecipients write fRecipients;
@@ -275,6 +270,11 @@ procedure TestDddInfraEmailer(serverClass: TSQLRestServerClass; test: TSynTestCa
 
 implementation
 
+uses
+  mormot.core.buffers,
+  mormot.core.text,
+  mormot.core.datetime,
+  mormot.core.os;
 
 { ****************** Email Sending Service }
 
@@ -282,7 +282,7 @@ implementation
 
 function TSMTPServer.CreateInstance: TInterfacedObject;
 begin
-  result := TSMTPServerSocketConnectionAbstractClass(fImplementation.ItemClass).
+  result := TSMTPServerSocketConnectionAbstractClass(fImplementation.ValueClass).
     Create(self);
 end;
 
@@ -355,7 +355,9 @@ begin
     readln(fSocket.SockIn^,Res);
   until (Length(Res)<4)or(Res[4]<>'-');
   if not IdemPChar(pointer(Res),pointer(Answer)) then
-    raise ECrtSocket.CreateFmt('returned [%s], expecting [%s]',[Res,Answer]);
+    // TODO: This line still needs to be converted from version 1.18
+    //raise ECrtSocket.CreateFmt('returned [%s], expecting [%s]',[Res,Answer]);
+    raise Exception.Create('returned error');
 end;
 
 procedure TSMTPServerSocketConnection.Exec(const Command,
@@ -427,8 +429,8 @@ end;
 
 { TSQLRecordEmailer }
 
-class procedure TSQLRecordEmailer.InitializeTable(Server: TSQLRestServer;
-  const FieldName: RawUTF8; Options: TSQLInitializeTableOptions);
+class procedure TSQLRecordEmailer.InitializeTable(const Server: IRestOrmServer;
+  const FieldName: RawUtf8; Options: TOrmInitializeTableOptions);
 begin
   inherited;
   if (FieldName='') or IdemPropNameU(FieldName,'State') then
@@ -444,7 +446,7 @@ const
 function TDDDEmailerDaemonProcess.ExecuteRetrievePendingAndSetProcessing: boolean;
 begin
   fPendingTask := (fDaemon as TDDDEmailerDaemon).RestClass.Create(
-    fDaemon.Rest,'State=? order by RowID',[ord(esPending)]);
+    fDaemon.Rest.Orm,'State=? order by RowID',[ord(esPending)]);
   if fPendingTask.ID=0 then begin
     result := false; // no more fPendingTask tasks
     exit;
@@ -525,7 +527,7 @@ begin
     {$endif}
     Email.MessageCompressed := SynLZCompressToBytes(aBody);
     CqrsBeginMethod(qaNone,result);
-    if not Email.FilterAndValidate(Rest,msg) then
+    if not Email.FilterAndValidate(Rest.Orm,msg) then
       CqrsSetResultString(cqrsDDDValidationFailed,msg,result) else
       if Rest.Add(Email,true)=0 then
         CqrsSetResult(cqrsDataLayerError,result) else
@@ -603,7 +605,7 @@ begin
     if (aTemplate='') or (ageInCache<>age) then begin
       aTemplate := AnyTextFileToRawUTF8(filename,true);
       if (aTemplate<>'') or (ageInCache<>0) then begin
-        fCache.Add(aTemplate,age);
+        fCache.AddOrUpdate(aTemplate,'',age);
         result := true;
       end;
     end else
@@ -637,27 +639,6 @@ begin
   end;
 end;
 
-
-{ TDDDEmailerDaemonStats }
-
-procedure TDDDEmailerDaemonStats.NewConnection;
-begin
-  fSafe^.Lock;
-  try
-    inc(fConnection);
-  finally
-    fSafe^.UnLock;
-  end;
-end;
-
-procedure TDDDEmailerDaemonStats.LockedSum(another: TSynMonitor);
-begin
-  inherited LockedSum(another);
-  if another.InheritsFrom(TDDDEmailerDaemonStats) then
-    inc(fConnection,TDDDEmailerDaemonStats(another).Connection);
-end;
-
-
 procedure TestDddInfraEmailer(serverClass: TSQLRestServerClass; test: TSynTestCase);
 var Rest: TSQLRestServer;
     daemon: TDDDEmailerDaemon;
@@ -673,13 +654,13 @@ var Rest: TSQLRestServer;
 begin
   // generate test ORM file for DDD persistence 
   TDDDRepositoryRestFactory.ComputeSQLRecord([
-    TDDDEmailerDaemonStats,TSQLRestServerMonitor]);
+    TDDDEmailerDaemonStats,TRestServerMonitor]);
   // we test here up to the raw SMTP socket layer
   Rest := serverClass.CreateWithOwnModel([]);
   try
     template := TDomUserEmailTemplate.Create;
     smtpMock := TInterfaceMockSpy.Create(ISMTPServerConnection,test);
-    smtpMock.ExpectsCount('SendEmail',qoGreaterThanOrEqualTo,1);
+    smtpMock.ExpectsCount('SendEmail',ioGreaterThanOrEqualTo,1);
     daemon := TDDDEmailerDaemon.CreateInjected(Rest,[],[smtpMock],[]);
     daemonLocal := daemon; // ensure daemon won't be released when resolved
     service := TDDDEmailValidationService.CreateInjected(Rest,[],
@@ -704,12 +685,12 @@ begin
       Check(not service.IsEmailValidated('toto','toto@toto.com'));
       Check(Rest.TableRowCount(TSQLRecordEmailValidation)=1);
       Check(Rest.TableRowCount(TSQLRecordEmailer)=1);
-      valid := TSQLRecordEmailValidation.Create(Rest,1);
+      valid := TSQLRecordEmailValidation.Create(Rest.Orm,1);
       Check(valid.Logon='toto');
       Check(valid.RequestTime<>0);
       Check(valid.ValidationTime=0);
       valid.Free;
-      email := TSQLRecordEmailer.Create(Rest,1);
+      email := TSQLRecordEmailer.Create(Rest.Orm,1);
       Check((length(email.Recipients)=1) and (email.Recipients[0]='toto@toto.com'));
       Check(email.SendTime=0);
       Check(SynLZDecompress(email.MessageCompressed)='body');
@@ -723,7 +704,7 @@ begin
       start := GetTickCount64;
       repeat
         Sleep(1);
-        email := TSQLRecordEmailer.Create(Rest,1);
+        email := TSQLRecordEmailer.Create(Rest.Orm,1);
         Check((length(email.Recipients)=1) and (email.Recipients[0]='toto@toto.com'));
         if email.SendTime<>0 then
           break;
@@ -765,7 +746,7 @@ begin
       start := GetTickCount64;
       repeat
         Sleep(1);
-        email := TSQLRecordEmailer.Create(Rest,2);
+        email := TSQLRecordEmailer.Create(Rest.Orm,2);
         Check((length(email.Recipients)=1) and (email.Recipients[0]='toto2@toto.com'));
         Check(email.Subject='Please Validate Your Email');
         if email.SendTime<>0 then
@@ -780,7 +761,7 @@ begin
       sleep(10);
       Check(daemon.Stop(info)=cqrsSuccess);
       Check(info.working=0);
-      smtpMock.Verify('SendEmail',qoEqualTo,2);
+      smtpMock.Verify('SendEmail',ioEqualTo,2);
     finally
       service.Free;
       template.Free;

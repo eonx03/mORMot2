@@ -6,9 +6,9 @@ interface
 uses
   SysUtils,
   Classes,
-  SynCommons,
-  SynTests,
-  mORMot,
+  mormot.core.base,
+  mormot.core.test,
+  mormot.core.text,
   DomConferenceTypes,
   DomConferenceInterfaces,
   DomConferenceServices,
@@ -29,6 +29,10 @@ type
 
 implementation
 
+uses
+  mormot.core.os,
+  mormot.core.data;
+
 { TTestBookingApplication }
 
 procedure TTestBookingApplication.RunService;
@@ -42,7 +46,7 @@ var
   a, b: TAttendee;
   days1, days2: TSessionDays;
   res: TRegisterAttendee;
-begin
+  begin
   a := TAttendee.Create;
   b := TAttendee.Create;
   try
@@ -57,7 +61,7 @@ begin
     check(fProcess.Booking.SearchRegistration(a.Name, a.FirstName, days2, b) = srFound);
     check(a.Name = b.Name);
     check(a.RegistrationNumber = b.RegistrationNumber);
-    check(DynArrayEquals(TypeInfo(TSessionDays), days1, days2));
+    check(DynArrayEquals(TypeInfo(TObjectDynArray), days1, days2));
   finally
     a.Free;
     b.Free;

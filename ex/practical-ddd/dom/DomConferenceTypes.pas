@@ -6,8 +6,7 @@ interface
 uses
   SysUtils,
   Classes,
-  SynCommons,
-  mORMot;
+  mormot.core.base;
 
 
 { Conference Domain Objects }
@@ -47,6 +46,9 @@ type
 
 
 implementation
+
+uses
+  mormot.orm.base;
 
 { TAttendee }
 

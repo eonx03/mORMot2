@@ -3,14 +3,16 @@ unit TestAllMain;
 interface
 
 uses
-  SynCommons,
-  SynTests,
+  mormot.core.base,
+  mormot.core.test,
+  DDDSelfTests,
   DomConferenceTest,
   ServBookTest;
 
 type
   TTestEkon = class(TSynTestsLogged)
   published
+    procedure DDDSharedUnits;
     procedure Infrastructure;
     procedure Domain;
     procedure Applications;
@@ -19,6 +21,13 @@ type
 implementation
 
 { TTestEkon }
+
+procedure TTestEkon.DDDSharedUnits;
+begin
+  AddCase([TTestDDDSharedUnits
+  ,TTestDDDMultiThread
+  ]);
+end;
 
 procedure TTestEkon.Infrastructure;
 begin

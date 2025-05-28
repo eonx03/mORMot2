@@ -50,18 +50,20 @@ unit dddInfraAuthRest;
 
 }
 
-{$I Synopse.inc} // define HASINLINE CPU32 CPU64 OWNNORMTOUPPER
+{$I mormot.defines.inc}
 
 interface
 
 uses
   SysUtils,
   Classes,
-  SynCommons,
-  SynCrypto,
-  SynTests,
-  mORMot,
-  mORMotDDD,
+  mormot.core.base,
+  mormot.core.datetime,
+  mormot.core.test,
+  mormot.orm.base,
+  mormot.orm.core,
+  mormot.rest.core,
+  mORMotDDD2,
   dddDomAuthInterfaces;
 
   
@@ -73,7 +75,7 @@ type
   protected
     fLogon: RawUTF8;
     fHashedPassword: RawUTF8;
-    class procedure InternalDefineModel(Props: TSQLRecordProperties); override;
+    class procedure InternalDefineModel(Props: TOrmProperties); override;
   published
     /// will map TAuthInfo.LogonName
     // - is defined as "stored AS_UNIQUE" so that it may be used as primary key
@@ -176,6 +178,11 @@ type
   
 
 implementation
+
+uses
+  mormot.core.text,
+  mormot.crypt.core,
+  mormot.rest.memserver;
 
 { TDDDAuthenticationAbstract }
 
@@ -366,7 +373,7 @@ end;
 { TSQLRecordUserAuth }
 
 class procedure TSQLRecordUserAuth.InternalDefineModel(
-  Props: TSQLRecordProperties);
+  Props: TOrmProperties);
 begin
   AddFilterNotVoidText(['Logon','HashedPassword']);
 end;

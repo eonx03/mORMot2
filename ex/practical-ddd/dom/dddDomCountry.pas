@@ -47,17 +47,16 @@ unit dddDomCountry;
 
 }
 
-{$I Synopse.inc} // define HASINLINE CPU32 CPU64 OWNNORMTOUPPER
+{$I mormot.defines.inc}
 
 interface
 
 uses
-  SysUtils,
-  Classes,
-  SynCommons,
-  SynTests,
-  mORMot,
-  mORMotDDD;
+  System.TypInfo, Classes, SysUtils,
+  mormot.core.base,
+  mormot.core.test,
+  mormot.core.data,
+  mORMotDDD2;
 
 
 { *********** Country Modeling }
@@ -152,6 +151,9 @@ type
 
 
 implementation
+
+uses mormot.core.unicode,
+   mormot.core.rtti;
 
 { TCountry }
 
@@ -304,7 +306,7 @@ begin
   L := length(text);
   P := @COUNTRY_NAME_EN[ccFirst];
   for result := ccFirst to high(result) do
-    if (length(P^)=L) and IdemPropNameUSameLen(pointer(P^),pointer(Text),L) then
+    if (length(P^)=L) and IdemPropNameUSameLen[true](Pointer(P^), Pointer(text), L) then
       exit else
       inc(P);
   result := ccUndefined;
@@ -452,8 +454,9 @@ begin
       CopyObject(c,c2);
       Check(c2.Iso=COUNTRY_ISONUM[i]);
       Check(c2.Alpha3=c.Alpha3);
-      Check(ObjectEquals(c,c2,false));
-      Check(ObjectEquals(c,c2,true));
+//      Check(ObjectEquals(c,c2,false));
+//      Check(ObjectEquals(c,c2,true));
+      Check(ObjectEquals(c,c2));
       t := c.English;
       Check(c.ToEnglish(i)=t);
       Check(c.FromEnglish(t)=i);

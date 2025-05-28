@@ -47,17 +47,18 @@ unit dddDomUserTypes;
 
 }
 
-{$I Synopse.inc} // define HASINLINE CPU32 CPU64 OWNNORMTOUPPER
+{$I mormot.defines.inc}
 
 interface
 
 uses
   SysUtils,
   Classes,
-  SynCommons,
-  SynTests,
-  mORMot,
-  mORMotDDD,
+  mormot.core.base,
+  mormot.core.test,
+  mormot.core.json,
+  mormot.orm.base,
+  mORMotDDD2,
   dddDomCountry;
 
 
@@ -226,6 +227,9 @@ type
   
 implementation
 
+uses
+  mormot.core.datetime,
+  mormot.core.text;
 
 { TAddress }
 
@@ -352,7 +356,7 @@ begin
   p := TPersonContactable.Create;
   with test do
   try
-    Check(JSONToObject(p,pointer(json),valid)^='*');
+    Check(JSONToObject(p,pointer(json),valid)^=#0);
     Check(valid);
     TestP;
   finally

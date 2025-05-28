@@ -47,16 +47,15 @@ unit dddDomAuthInterfaces;
 
 }
 
-{$I Synopse.inc} // define HASINLINE CPU32 CPU64 OWNNORMTOUPPER
+{$I mormot.defines.inc}
 
 interface
 
 uses
-  SynCommons,
+  mormot.core.base,
   SysUtils,
   Classes,
-  mORMot,
-  mORMotDDD;
+  mORMotDDD2;
   
 type
   /// the data type which will be returned during a password challenge
@@ -114,6 +113,9 @@ type
 
   
 implementation
+
+uses
+   mormot.core.interfaces;
 
 initialization
   TInterfaceFactory.RegisterInterfaces(

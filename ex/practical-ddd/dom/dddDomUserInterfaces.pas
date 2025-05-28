@@ -47,16 +47,15 @@ unit dddDomUserInterfaces;
 
 }
 
-{$I Synopse.inc} // define HASINLINE CPU32 CPU64 OWNNORMTOUPPER
+{$I mormot.defines.inc}
 
 interface
 
 uses
-  SynCommons,
   SysUtils,
   Classes,
-  mORMot,
-  mORMotDDD,
+  mormot.core.base,
+  mORMotDDD2,
   dddDomUserTypes;
 
 type
@@ -106,6 +105,9 @@ type
 
   
 implementation
+
+uses
+  mormot.core.interfaces;
 
 initialization
   TInterfaceFactory.RegisterInterfaces(

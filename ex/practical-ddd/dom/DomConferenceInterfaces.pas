@@ -6,8 +6,7 @@ interface
 uses
   SysUtils,
   Classes,
-  SynCommons,
-  mORMot,
+  mormot.core.base,
   DomConferenceTypes;
 
 { Conference Domain Services }
@@ -29,6 +28,10 @@ type
 
 
 implementation
+
+uses
+  mormot.core.interfaces,
+  mormot.orm.base;
 
 initialization
   TJSONSerializer.RegisterObjArrayForJSON([
