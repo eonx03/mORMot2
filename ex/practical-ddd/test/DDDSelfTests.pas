@@ -12,7 +12,7 @@ uses
   mormot.rest.core,
   mormot.rest.sqlite3,
   mormot.rest.http.server,
-  mormot.rest.http.client,                    j
+  mormot.rest.http.client,
   mORMotDDD2;
 
 type
