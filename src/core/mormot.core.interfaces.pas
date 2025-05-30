@@ -964,7 +964,8 @@ type
     fResolversToBeReleased: TInterfaceResolverObjArray;
     fDependencies: TInterfacedObjectObjArray;
     function TryResolve(aInterface: PRttiInfo; out Obj): boolean; override;
-    function TryResolveInternal(aInterface: PRttiInfo; out Obj): boolean;
+    // internal function matching Implements() for ickFromInjectedResolver
+    function TryResolveImplements(aInterface: PRttiInfo; out Obj): boolean;
   public
     /// define a global class type for interface resolution
     // - most of the time, you will need a local DI/IoC resolution list; but
@@ -5307,13 +5308,18 @@ begin
   result := false;
 end;
 
-function TInterfaceResolverInjected.TryResolveInternal(aInterface: PRttiInfo; out Obj): boolean;
-var i: integer;
+function TInterfaceResolverInjected.TryResolveImplements(aInterface: PRttiInfo;
+  out Obj): boolean;
+var
+  i: PtrInt;
 begin
+  // only check local resolvers, as Implements() does
   result := true;
-  if (self<>nil) and (aInterface<>nil) and (fResolvers<>nil) then
-    for i := 0 to length(fResolvers)-1 do
-      if fResolvers[i].TryResolve(aInterface,Obj) then
+  if (self <> nil) and
+     (aInterface <> nil) and
+     (fResolvers <> nil) then
+    for i := 0 to length(fResolvers) - 1 do
+      if fResolvers[i].TryResolve(aInterface, Obj) then
         exit;
   result := false;
 end;
