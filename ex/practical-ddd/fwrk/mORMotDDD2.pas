@@ -443,7 +443,7 @@ type
   public
     /// constructor like FormatUTF8() which will also serialize the caller info
     constructor CreateUTF8(Caller: TDDDRepositoryRestFactory;
-      const Format: RawUTF8; const Args: array of const);
+      const Format: RawUTF8; const Args: array of const); reintroduce;
   end;
 
   /// store reference of several factories, each with one mapping definition
@@ -2296,7 +2296,7 @@ end;
 
 function TDDDMonitoredDaemon.GetStatus: variant;
 var i,working: integer;
-    stats: TSynMonitor;
+//    stats: TSynMonitor;
     pool: TDocVariantData;
     totalCount: TSynMonitorCount64;
     totalBytes: TSynMonitorTotalBytes;
@@ -2469,9 +2469,11 @@ end;
 
 constructor TDDDAdministratedDaemon.Create(
   const aUserName, aHashedPassword, aRoot: RawUTF8; const aServerNamedPipe: TFileName);
-var server: TSQLRestServer;
-a: TOrmModel;
+//var server: TSQLRestServer;
+//a: TOrmModel;
+// TODO: This method still needs to be converted from version 1.18
 begin
+(*
 // TODO: This line still needs to be converted from version 1.18
 //  server := TSQLRestServerFullMemory.CreateWithOwnedAuthenticatedModel([],
 //    aUserName,aHashedPassword,aRoot);
@@ -2490,6 +2492,7 @@ begin
       [aServerNamedPipe],self);
     {$endif}
     {$endif}
+*)
 end;
 
 destructor TDDDAdministratedDaemon.Destroy;
