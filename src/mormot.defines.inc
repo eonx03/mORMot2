@@ -12,7 +12,7 @@
 {  Those conditionals below can be enabled in your project Options,
    to tune the compilation depending your setup or your project expectations. }
 
-{.$define USEPACKAGES}
+{$define USEPACKAGES}
 // define this if you compile the unit within a Delphi package
 // - it will avoid error like "[DCC Error] E2201 Need imported data reference
 // ($G) to access 'VarCopyProc'"
